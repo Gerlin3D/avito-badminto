@@ -1,0 +1,5 @@
+node_modules
+.env
+debug-avito.html
+src/storage/pw-profile
+src/storage/*.db
