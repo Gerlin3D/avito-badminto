@@ -47,7 +47,7 @@ async function searchAvito(query, options = {}) {
 
   const userDataDir = path.join(__dirname, '..', 'storage', 'pw-profile');
   const proxy = getProxyConfig();
-  const headless = process.env.AVITO_HEADLESS === 'true';
+  const headless = process.env.AVITO_HEADLESS !== 'false';
 
   console.log('1) before persistent context launch');
   console.log('Proxy enabled:', Boolean(proxy));
