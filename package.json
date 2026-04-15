@@ -13,6 +13,7 @@
   "dependencies": {
     "cheerio": "^1.2.0",
     "dotenv": "^17.4.1",
+    "googleapis": "^171.4.0",
     "patchright": "^1.59.4",
     "playwright": "^1.59.1",
     "sqlite3": "^6.0.1"

@@ -89,11 +89,36 @@ function createItemsRepository(db) {
     });
   }
 
+  function getAllItems() {
+    return new Promise((resolve, reject) => {
+      db.all('SELECT * FROM items ORDER BY first_seen_at DESC', [], (err, rows) => {
+        if (err) return reject(err);
+        resolve(rows);
+      });
+    });
+  }
+
+  function deleteOldItems(days = 30) {
+    return new Promise((resolve, reject) => {
+      const query = `
+        DELETE FROM items
+        WHERE last_seen_at < datetime('now', '-' || ? || ' days')
+      `;
+
+      db.run(query, [days], function (err) {
+        if (err) return reject(err);
+        resolve(this.changes);
+      });
+    });
+  }
+
   return {
     upsertItem,
     markAsNotified,
     getUnnotifiedItems,
+    getAllItems,
     deactivateOldItems,
+    deleteOldItems,
   };
 }
 

@@ -1,6 +1,7 @@
 const { initDb } = require('./db/initDb');
 const { createItemsRepository } = require('./db/itemsRepository');
 const { searchAvito } = require('./provider/avitoProvider');
+const { syncToSheets } = require('./sheets/syncToSheets');
 
 async function start() {
   const db = await initDb();
@@ -24,6 +25,12 @@ async function start() {
 
     const unnotified = await repo.getUnnotifiedItems();
     console.log('🆕 Unnotified in DB:', unnotified.length);
+
+    const deleted = await repo.deleteOldItems(30);
+    if (deleted > 0) console.log(`🗑️ Deleted old items: ${deleted}`);
+
+    const allItems = await repo.getAllItems();
+    await syncToSheets(allItems);
   } catch (error) {
     console.error('❌ Error:', error.message);
   } finally {
