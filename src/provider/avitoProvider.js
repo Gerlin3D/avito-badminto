@@ -56,11 +56,10 @@ async function searchAvito(query, options = {}) {
   }
 
   const context = await chromium.launchPersistentContext(userDataDir, {
+    channel: 'chrome',
     headless,
     locale: 'ru-RU',
     viewport: { width: 1440, height: 900 },
-    userAgent:
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36',
     proxy,
     args: ['--no-sandbox'],
   });
@@ -93,7 +92,7 @@ async function searchAvito(query, options = {}) {
       timeout: 30000,
     });
 
-    await page.waitForTimeout(8000);
+    await page.waitForSelector('[data-marker="item"], [data-marker="catalog-serp"], .firewall-title', { timeout: 15000 }).catch(() => {});
 
     const finalUrl = page.url();
     const title = await page.title();
@@ -126,7 +125,6 @@ async function searchAvito(query, options = {}) {
     }
 
     const items = await page.evaluate((query) => {
-      const anchors = Array.from(document.querySelectorAll('a[href]'));
       const results = [];
       const seen = new Set();
 
@@ -152,36 +150,30 @@ async function searchAvito(query, options = {}) {
         return 'other';
       }
 
-      for (const a of anchors) {
-        const href = a.getAttribute('href');
+      const items = document.querySelectorAll('[data-marker="item"]');
+
+      for (const item of items) {
+        const titleEl =
+          item.querySelector('[data-marker="item-title"]') ||
+          item.querySelector('h3');
+
+        const title = titleEl?.textContent?.trim();
+        if (!title || title.length < 5) continue;
+
+        const linkEl =
+          item.querySelector('[data-marker="item-title"] a') ||
+          item.querySelector('a[href*="_"]');
+
+        const href = linkEl?.getAttribute('href');
         const url = normalizeLink(href);
         if (!url) continue;
 
-        const looksLikeListing =
-          /\/[^/]+\/[^/?#]+_\d+/.test(url) || /_\d+(\?|$)/.test(url);
-
-        if (!looksLikeListing) continue;
-
-        const title =
-          a.getAttribute('title')?.trim() ||
-          a.querySelector('h3')?.textContent?.trim() ||
-          a.textContent?.trim();
-
-        if (!title || title.length < 5) continue;
-
-        const textAround =
-          a.closest('article')?.textContent ||
-          a.closest('[data-marker]')?.textContent ||
-          a.parentElement?.textContent ||
-          '';
-
-        const priceMatch = textAround.match(/\d[\d\s]{1,12}₽/);
-        const price = parsePrice(priceMatch?.[0] || '');
-
         const idMatch = url.match(/_(\d+)(?:\?|$)/);
         const id = idMatch ? idMatch[1] : url;
-
         if (seen.has(id)) continue;
+
+        const priceEl = item.querySelector('[data-marker="item-price"]');
+        const price = parsePrice(priceEl?.textContent || '');
 
         results.push({
           id,
