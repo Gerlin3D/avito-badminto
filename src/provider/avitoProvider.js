@@ -2,7 +2,7 @@ require('dotenv').config();
 
 const fs = require('fs');
 const path = require('path');
-const { chromium } = require('playwright');
+const { chromium } = require('patchright');
 
 const BASE_URL = 'https://www.avito.ru';
 
