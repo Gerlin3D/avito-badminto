@@ -6,11 +6,13 @@ const { chromium } = require('patchright');
 
 const BASE_URL = 'https://www.avito.ru';
 
-function buildSearchUrl({ query, location = 'rossiya' }) {
+function buildSearchUrl({ query, location = 'rossiya', page = 1 }) {
   const url = new URL(`${BASE_URL}/${location}`);
   url.searchParams.set('q', query);
+  if (page > 1) url.searchParams.set('p', page);
   return url.toString();
 }
+
 function getProxyConfig() {
   const enabled = process.env.AVITO_PROXY_ENABLED === 'true';
   const server = process.env.AVITO_PROXY_SERVER?.trim();
@@ -43,6 +45,7 @@ async function searchAvito(query, options = {}) {
   const searchUrl = buildSearchUrl({
     query,
     location: options.location || process.env.AVITO_LOCATION || 'rossiya',
+    page: options.page || 1,
   });
 
   const userDataDir = path.join(__dirname, '..', 'storage', 'pw-profile');

@@ -112,6 +112,16 @@ function createItemsRepository(db) {
     });
   }
 
+  function clearAllItems() {
+    return new Promise((resolve, reject) => {
+
+      db.run(`DELETE FROM items`, [], function (err) {
+        if (err) return reject(err);
+        resolve(this.changes);
+      });
+    });
+  }
+
   return {
     upsertItem,
     markAsNotified,
@@ -119,6 +129,7 @@ function createItemsRepository(db) {
     getAllItems,
     deactivateOldItems,
     deleteOldItems,
+    clearAllItems
   };
 }
 
