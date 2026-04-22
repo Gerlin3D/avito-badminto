@@ -1,6 +1,5 @@
 require('dotenv').config();
 const { Telegraf } = require('telegraf');
-const cron = require('node-cron');
 const { initDb } = require('./db/initDb');
 const { createItemsRepository } = require('./db/itemsRepository');
 const { searchAvito } = require('./provider/avitoProvider');
@@ -8,7 +7,7 @@ const { syncToSheets } = require('./sheets/syncToSheets');
 
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const CHAT_ID = process.env.TELEGRAM_CHAT_ID; 
+const ALLOWED_IDS = (process.env.TELEGRAM_ALLOWED_IDS || '').split(',').map(s => s.trim()); 
 const QUERY = process.env.AVITO_QUERY || 'ракетка бадминтон'; 
 const LOCATION = process.env.AVITO_LOCATION || 'sankt-peterburg'; 
 
@@ -18,9 +17,15 @@ if (!TOKEN) {
 }
 const bot = new Telegraf(TOKEN);
 
+bot.use((ctx, next) => {
+  if (!ALLOWED_IDS.includes(String(ctx.chat.id))) {
+    return ctx.reply('⛔ Доступ запрещён');
+  }
+  return next();
+});
+
 let db;
 let repo;
-let currentPage = 1;
 
 async function runScraper(ctx, page = 1) {
   try {
@@ -43,7 +48,6 @@ async function runScraper(ctx, page = 1) {
       }}
     )
 
-    currentPage = page;
 
   } catch (error) {
     await ctx.reply(`❌ Произошла ошибка: ${error.message}`);
@@ -66,9 +70,9 @@ bot.command('start', async (ctx) => {
     '👋 Привет! Выбери действие:\n\n', {
     reply_markup: {
       keyboard: [
-        [{ text: '🔍 Спарсить объявления', callback_data: 'scrape'  }],
-        [{ text: '🗑️ Очистить базу и таблицу', callback_data: 'clear' }],
-        [{ text: '📊 Статистика', callback_data: 'status'  }]
+        [{ text: '🔍 Спарсить объявления'}],
+        [{ text: '🗑️ Очистить базу и таблицу'}],
+        [{ text: '📊 Статистика'}]
       ],
       resize_keyboard: true,
       persistent: true
