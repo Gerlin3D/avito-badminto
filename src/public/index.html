@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Avito Parser</title>
+</head>
+
+<body>
+    <h1>Avito Parser</h1>
+    <p>Welcome to the Avito Parser!</p>
+
+    <input type="text" id="query" placeholder="Enter search word">
+    <button id="searchBtn">Search</button>
+    <pre id="log">    </pre>
+
+    <script>
+        const evnSource = new EventSource('/events');
+
+        evnSource.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            document.getElementById('log').textContent += '\n' + `\n${data.message}`;
+        };
+
+        document.getElementById('searchBtn').addEventListener('click', async () => {
+            const query = document.getElementById('query').value;
+    
+            if (!query) {
+                alert('Please enter a search word');
+                return;
+            }
+    
+            const response = await fetch(`/scrape`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ query })
+            });
+    
+            const data = await response.json();
+    
+            document.getElementById('log').textContent = JSON.stringify(data, null, 2);
+        })
+    
+    </script>
+</body>
+
+</html>

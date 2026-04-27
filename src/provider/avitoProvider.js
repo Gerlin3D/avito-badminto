@@ -41,18 +41,37 @@ function getProxyConfig() {
   };
 }
 
-async function searchAvito(query, options = {}) {
-  const searchUrl = buildSearchUrl({
-    query,
-    location: options.location || process.env.AVITO_LOCATION || 'rossiya',
-    page: options.page || 1,
+function getHeadlessMode() {
+  return process.env.AVITO_HEADLESS !== 'false';
+}
+
+function attachPageLogging(page) {
+  if (page.__avitoLoggingAttached) return;
+  page.__avitoLoggingAttached = true;
+
+  page.on('request', (request) => {
+    console.log('REQUEST:', request.method(), request.url());
   });
 
+  page.on('response', (response) => {
+    console.log('RESPONSE:', response.status(), response.url());
+  });
+
+  page.on('requestfailed', (request) => {
+    console.log('REQUEST FAILED:', request.url(), request.failure()?.errorText);
+  });
+
+  page.on('pageerror', (error) => {
+    console.log('PAGE ERROR:', error.message);
+  });
+}
+
+async function createAvitoSession() {
   const userDataDir = path.join(__dirname, '..', 'storage', 'pw-profile');
   const proxy = getProxyConfig();
-  const headless = process.env.AVITO_HEADLESS !== 'false';
+  const headless = getHeadlessMode();
 
-  console.log('1) before persistent context launch');
+  console.log('Launching Avito browser context');
   console.log('Proxy enabled:', Boolean(proxy));
   if (proxy) {
     console.log('Proxy server:', proxy.server);
@@ -67,144 +86,230 @@ async function searchAvito(query, options = {}) {
     args: ['--no-sandbox'],
   });
 
-  console.log('2) persistent context launched');
-
   const page = context.pages()[0] || (await context.newPage());
+  attachPageLogging(page);
 
-  page.on('request', (request) => {
-    console.log('➡️ REQUEST:', request.method(), request.url());
-  });
+  return {
+    context,
+    page,
+    close: () => context.close(),
+  };
+}
 
-  page.on('response', (response) => {
-    console.log('⬅️ RESPONSE:', response.status(), response.url());
-  });
+function isBlockedByAvito(title, html) {
+  return (
+    title.includes('\u0414\u043e\u0441\u0442\u0443\u043f \u043e\u0433\u0440\u0430\u043d\u0438\u0447\u0435\u043d') ||
+    html.includes('hcaptcha') ||
+    html.includes('\u043f\u0440\u043e\u0431\u043b\u0435\u043c\u0430 \u0441 IP')
+  );
+}
 
-  page.on('requestfailed', (request) => {
-    console.log('❌ REQUEST FAILED:', request.url(), request.failure()?.errorText);
-  });
+async function waitForManualUnblock(page) {
+  console.log('Avito blocked this session. Waiting 2 minutes for manual captcha solving...');
+  await page.waitForTimeout(120000);
 
-  page.on('pageerror', (error) => {
-    console.log('📄 PAGE ERROR:', error.message);
-  });
+  const html = await page.content();
+  const title = await page.title();
 
-  try {
-    console.log('3) going to:', searchUrl);
+  if (isBlockedByAvito(title, html)) {
+    throw new Error('Avito blocked this session');
+  }
+}
 
-    await page.goto(searchUrl, {
-      waitUntil: 'domcontentloaded',
-      timeout: 30000,
-    });
+async function parseCurrentPage(page, query) {
+  return page.evaluate((searchQuery) => {
+    const results = [];
+    const seen = new Set();
 
-    await page.waitForSelector('[data-marker="item"], [data-marker="catalog-serp"], .firewall-title', { timeout: 15000 }).catch(() => {});
-
-    const finalUrl = page.url();
-    const title = await page.title();
-    const html = await page.content();
-
-    fs.writeFileSync('debug-avito.html', html);
-
-    console.log('Final URL:', finalUrl);
-    console.log('Title:', title);
-    console.log('HTML length:', html.length);
-
-    const blocked =
-      title.includes('Доступ ограничен') ||
-      html.includes('hcaptcha') ||
-      html.includes('проблема с IP');
-
-    console.log('Blocked:', blocked);
-
-    const linksCount = await page.locator('a[href]').count();
-    console.log('🔗 Links on page:', linksCount);
-
-    const hrefs = await page.locator('a[href]').evaluateAll((links) =>
-      links.map((a) => a.getAttribute('href')).filter(Boolean).slice(0, 50)
-    );
-
-    console.log('🔍 First hrefs:', hrefs);
-
-    if (blocked) {
-      throw new Error('Avito blocked this session');
+    function normalizeLink(href) {
+      if (!href) return null;
+      if (href.startsWith('http')) return href;
+      return `https://www.avito.ru${href}`;
     }
 
-    const items = await page.evaluate((query) => {
-      const results = [];
-      const seen = new Set();
+    function parsePrice(text) {
+      if (!text) return null;
+      const digits = text.replace(/[^\d]/g, '');
+      return digits ? Number(digits) : null;
+    }
 
-      function normalizeLink(href) {
-        if (!href) return null;
-        if (href.startsWith('http')) return href;
-        return `https://www.avito.ru${href}`;
+    function detectCategory(title = '', query = '') {
+      const text = `${title} ${query}`.toLowerCase();
+
+      if (
+        text.includes('\u0442\u0440\u0435\u043d\u0435\u0440') ||
+        text.includes('\u0442\u0440\u0435\u043d\u0438\u0440\u043e\u0432\u043a\u0430') ||
+        text.includes('\u0441\u043f\u0430\u0440\u0440\u0438\u043d\u0433')
+      ) {
+        return 'coach';
       }
 
-      function parsePrice(text) {
-        if (!text) return null;
-        const digits = text.replace(/[^\d]/g, '');
-        return digits ? Number(digits) : null;
+      if (text.includes('\u0432\u043e\u043b\u0430\u043d')) return 'shuttles';
+      if (text.includes('\u0440\u0430\u043a\u0435\u0442')) return 'rackets';
+      return 'other';
+    }
+
+    const items = document.querySelectorAll('[data-marker="item"]');
+
+    for (const item of items) {
+      const titleEl =
+        item.querySelector('[data-marker="item-title"]') ||
+        item.querySelector('h3');
+
+      const title = titleEl?.textContent?.trim();
+      if (!title || title.length < 5) continue;
+
+      const linkEl =
+        item.querySelector('[data-marker="item-title"] a') ||
+        item.querySelector('a[href*="_"]');
+
+      const href = linkEl?.getAttribute('href');
+      const url = normalizeLink(href);
+      if (!url) continue;
+
+      const idMatch = url.match(/_(\d+)(?:\?|$)/);
+      const id = idMatch ? idMatch[1] : url;
+      if (seen.has(id)) continue;
+
+      const priceEl = item.querySelector('[data-marker="item-price"]');
+      const price = parsePrice(priceEl?.textContent || '');
+
+      results.push({
+        id,
+        title: title.replace(/\s+/g, ' '),
+        price,
+        url,
+        location: null,
+        seller_name: null,
+        category: detectCategory(title, searchQuery),
+        query: searchQuery,
+      });
+
+      seen.add(id);
+    }
+
+    return results.slice(0, 100);
+  }, query);
+}
+
+async function searchAvitoPage(page, query, options = {}) {
+  const searchUrl = buildSearchUrl({
+    query,
+    location: options.location || process.env.AVITO_LOCATION || 'rossiya',
+    page: options.page || 1,
+  });
+
+  console.log('Going to:', searchUrl);
+
+  await page.goto(searchUrl, {
+    waitUntil: 'domcontentloaded',
+    timeout: 30000,
+  });
+
+  await page
+    .waitForSelector('[data-marker="item"], [data-marker="catalog-serp"], .firewall-title', {
+      timeout: 15000,
+    })
+    .catch(() => {});
+
+  const finalUrl = page.url();
+  const title = await page.title();
+  const html = await page.content();
+
+  if (process.env.DEBUG_AVITO === 'true') {
+    fs.writeFileSync('debug-avito.html', html);
+  }
+
+  console.log('Final URL:', finalUrl);
+  console.log('Title:', title);
+  console.log('HTML length:', html.length);
+
+  const blocked = isBlockedByAvito(title, html);
+  console.log('Blocked:', blocked);
+
+  if (blocked) {
+    if (!getHeadlessMode()) {
+      await waitForManualUnblock(page);
+    } else {
+      throw new Error('Avito blocked this session');
+    }
+  }
+
+  const items = await parseCurrentPage(page, query);
+  console.log('Parsed items preview:', items.slice(0, 5));
+
+  return {
+    searchUrl,
+    finalUrl,
+    items,
+  };
+}
+
+async function searchAvitoPages(query, options = {}) {
+  const session = await createAvitoSession();
+  const startPage = Number(options.startPage || options.page || 1);
+  const maxPages = Number(options.maxPages || process.env.AVITO_MAX_PAGES || 1);
+  const collectedItems = [];
+  const seenIds = new Set();
+  const pages = [];
+  let stopReason = '';
+
+  try {
+    for (let pageNumber = startPage; pageNumber < startPage + maxPages; pageNumber++) {
+      const result = await searchAvitoPage(session.page, query, {
+        ...options,
+        page: pageNumber,
+      });
+
+      pages.push({
+        page: pageNumber,
+        searchUrl: result.searchUrl,
+        finalUrl: result.finalUrl,
+        itemsCount: result.items.length,
+      });
+
+      if (result.items.length === 0) {
+        stopReason = `No items on page ${pageNumber}`;
+        break;
       }
 
-      function detectCategory(title = '', query = '') {
-        const text = `${title} ${query}`.toLowerCase();
-        if (text.includes('тренер') || text.includes('тренировка') || text.includes('спарринг')) {
-          return 'coach';
-        }
-        if (text.includes('волан')) return 'shuttles';
-        if (text.includes('ракет')) return 'rackets';
-        return 'other';
+      const newItems = result.items.filter((item) => {
+        if (seenIds.has(item.id)) return false;
+        seenIds.add(item.id);
+        return true;
+      });
+
+      if (newItems.length === 0) {
+        stopReason = `Page ${pageNumber} repeats already parsed items`;
+        break;
       }
 
-      const items = document.querySelectorAll('[data-marker="item"]');
+      collectedItems.push(...newItems);
+    }
 
-      for (const item of items) {
-        const titleEl =
-          item.querySelector('[data-marker="item-title"]') ||
-          item.querySelector('h3');
-
-        const title = titleEl?.textContent?.trim();
-        if (!title || title.length < 5) continue;
-
-        const linkEl =
-          item.querySelector('[data-marker="item-title"] a') ||
-          item.querySelector('a[href*="_"]');
-
-        const href = linkEl?.getAttribute('href');
-        const url = normalizeLink(href);
-        if (!url) continue;
-
-        const idMatch = url.match(/_(\d+)(?:\?|$)/);
-        const id = idMatch ? idMatch[1] : url;
-        if (seen.has(id)) continue;
-
-        const priceEl = item.querySelector('[data-marker="item-price"]');
-        const price = parsePrice(priceEl?.textContent || '');
-
-        results.push({
-          id,
-          title: title.replace(/\s+/g, ' '),
-          price,
-          url,
-          location: null,
-          seller_name: null,
-          category: detectCategory(title, query),
-          query,
-        });
-
-        seen.add(id);
-      }
-
-      return results.slice(0, 100);
-    }, query);
-
-    console.log('🧪 Parsed items preview:', items.slice(0, 5));
+    if (!stopReason) {
+      stopReason = `Reached ${maxPages} page limit`;
+    }
 
     return {
-      searchUrl,
-      finalUrl,
-      items,
+      items: collectedItems,
+      pages,
+      stopReason,
     };
   } finally {
-    console.log('4) closing context');
-    await context.close();
+    console.log('Closing Avito browser context');
+    await session.close();
+  }
+}
+
+async function searchAvito(query, options = {}) {
+  const session = await createAvitoSession();
+
+  try {
+    return await searchAvitoPage(session.page, query, options);
+  } finally {
+    console.log('Closing Avito browser context');
+    await session.close();
   }
 }
 
@@ -235,4 +340,10 @@ async function canReachAvitoWithProxy() {
   }
 }
 
-module.exports = { searchAvito };
+module.exports = {
+  searchAvito,
+  searchAvitoPage,
+  searchAvitoPages,
+  createAvitoSession,
+  canReachAvitoWithProxy,
+};
