@@ -1,50 +1,63 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Avito Parser</title>
-</head>
+  </head>
 
-<body>
+  <body>
     <h1>Avito Parser</h1>
     <p>Welcome to the Avito Parser!</p>
 
-    <input type="text" id="query" placeholder="Enter search word">
+    <input type="text" id="query" placeholder="Enter search word" />
+    <select id="location">
+      <option value="rossiya">Вся россия</option>
+      <option value="sankt-peterburg">Санкт-Петербург</option>
+      <option value="moskva">Москва</option>
+      <option value="novosibirsk">Новосибирск</option>
+      <option value="yekaterinburg">Екатеринбург</option>
+      <option value="nizhniy_novgorod">Нижний Новгород</option>
+      <option value="samara">Самара</option>
+      <option value="krasnodar">Краснодар</option>
+    </select>
+
     <button id="searchBtn">Search</button>
-    <pre id="log">    </pre>
+    <pre id="log"></pre>
 
     <script>
-        const evnSource = new EventSource('/events');
+      const evnSource = new EventSource("/events");
 
-        evnSource.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            document.getElementById('log').textContent += '\n' + `\n${data.message}`;
-        };
+      evnSource.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        document.getElementById("log").textContent +=
+          "\n" + `\n${data.message}`;
+      };
 
-        document.getElementById('searchBtn').addEventListener('click', async () => {
-            const query = document.getElementById('query').value;
-    
-            if (!query) {
-                alert('Please enter a search word');
-                return;
-            }
-    
-            const response = await fetch(`/scrape`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ query })
-            });
-    
-            const data = await response.json();
-    
-            document.getElementById('log').textContent = JSON.stringify(data, null, 2);
-        })
-    
+      document.getElementById("searchBtn").addEventListener("click", async () => {
+          const query = document.getElementById("query").value;
+          const location = document.getElementById("location").value;
+
+          if (!query) {
+            alert("Please enter a search word");
+            return;
+          }
+
+          const response = await fetch(`/scrape`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ query, location }),
+          });
+
+          const data = await response.json();
+
+          document.getElementById("log").textContent = data.items 
+                ? `Найдено: ${data.items.length} объявлений\n`
+                : `Ошибка: ${data.message}`;
+
+        });
     </script>
-</body>
-
+  </body>
 </html>

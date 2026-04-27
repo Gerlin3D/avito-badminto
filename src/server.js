@@ -1,61 +1,76 @@
-const express = require('express');
-require('dotenv').config();
-const path = require('path');
-const { searchAvitoPages } = require('./provider/avitoProvider');
+const express = require("express");
+require("dotenv").config();
+const path = require("path");
+const { searchAvitoPages } = require("./provider/avitoProvider");
 
 const app = express();
 const PORT = process.env.PORT || 4000;
 
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
-
+app.use(express.static(path.join(__dirname, "public")));
 
 // app.get('/', (req, res) => {
 //   res.send('Hello World!');
 // });
 
-app.post('/scrape', async (req, res) => {
+let sseClient = null;
+
+function sendLog(message) {
+  if (sseClient) {
+    sseClient.write(`data: ${JSON.stringify({ message })}\n\n`);
+    console.log("Sent log to client::: ", message);
+  }
+}
+
+app.post("/scrape", async (req, res) => {
   try {
-    const { query } = req.body;
-    const maxPages = Number(req.body.maxPages || process.env.AVITO_MAX_PAGES || 1);
+    const { query, location } = req.body;
+    const maxPages = Number(
+      req.body.maxPages || process.env.AVITO_MAX_PAGES || 1,
+    );
 
     if (!query?.trim()) {
-      return res.status(400).json({ message: 'Query is required' });
+      return res.status(400).json({ message: "Query is required" });
     }
 
-    console.log('Received query:', query);
+    console.log("Received query:", query);
+
+    sendLog(
+      `🔍 Запускаю парсинг: "${query}", город: ${location || "rossiya"}, страниц: ${maxPages}`,
+    );
 
     const result = await searchAvitoPages(query.trim(), {
-      location: process.env.AVITO_LOCATION || 'sankt-peterburg',
+      location: location || "rossiya",
       maxPages,
     });
 
+    sendLog(`✅ Готово! Найдено объявлений: ${result.items.length}`);
+    sendLog(`ℹ️ Остановка: ${result.stopReason}`);
+
     res.status(200).json({
-      message: 'Scrape finished',
+      message: "Scrape finished",
       query,
       maxPages,
       ...result,
     });
   } catch (error) {
-    console.error('Scrape failed:', error);
+    console.error("Scrape failed:", error);
     res.status(500).json({ message: error.message });
   }
 });
 
-app.get('/events', (req, res) => {
-    res.header('Content-Type', 'text/event-stream');
-    res.header('Cache-Control', 'no-cache');
-    res.header('Connection', 'keep-alive');
+app.get("/events", (req, res) => {
+  res.header("Content-Type", "text/event-stream");
+  res.header("Cache-Control", "no-cache");
+  res.header("Connection", "keep-alive");
 
-    res.write('data: {"message": "Connected"}\n\n');
-    
-    res.on('close', () => {
-        console.log('Client disconnected');
-    });
-})
-    
-
+  res.write('data: {"message": "Connected"}\n\n');
+  sseClient = res;
+  res.on("close", () => {
+    console.log("Client disconnected");
+  });
+});
 
 app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);   
-})
+  console.log(`Server is running on port ${PORT}`);
+});
