@@ -163,6 +163,15 @@ async function parseCurrentPage(page, query) {
         item.querySelector('[data-marker="item-title"] a') ||
         item.querySelector('a[href*="_"]');
 
+      const locationEl = item.querySelector('[data-marker="item-location"]')
+        || item.querySelector('.geo-root')
+        || item.querySelector('.geo-address');
+
+
+      const locationText = locationEl?.textContent?.trim() || null;
+      const location = locationText ? locationText.split(',')[0].trim() : null;
+
+
       const href = linkEl?.getAttribute('href');
       const url = normalizeLink(href);
       if (!url) continue;
@@ -179,7 +188,7 @@ async function parseCurrentPage(page, query) {
         title: title.replace(/\s+/g, ' '),
         price,
         url,
-        location: null,
+        location,
         seller_name: null,
         category: detectCategory(title, searchQuery),
         query: searchQuery,
@@ -238,6 +247,12 @@ async function searchAvitoPage(page, query, options = {}) {
   const items = await parseCurrentPage(page, query);
   console.log('Parsed items preview:', items.slice(0, 5));
 
+  if (options.locationName) {
+  for (const item of items) {
+    item.location = options.locationName;
+  }
+}
+
   return {
     searchUrl,
     finalUrl,
@@ -285,7 +300,13 @@ async function searchAvitoPages(query, options = {}) {
       }
 
       collectedItems.push(...newItems);
+
+      const delay = 2000 + Math.random() * 7000
+      await session.page.waitForTimeout(delay);
     }
+
+ 
+
 
     if (!stopReason) {
       stopReason = `Reached ${maxPages} page limit`;

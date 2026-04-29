@@ -1,7 +1,10 @@
 const express = require("express");
 require("dotenv").config();
 const path = require("path");
-const { searchAvitoPages } = require("./provider/avitoProvider");
+const { searchAvito } = require("./provider/avitoProvider");
+const { syncToSheets } = require("./sheets/syncToSheets");
+const { createItemsRepository } = require("./db/itemsRepository");
+const { initDb } = require("./db/initDb");
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -16,15 +19,31 @@ app.use(express.static(path.join(__dirname, "public")));
 let sseClient = null;
 
 function sendLog(message) {
+  console.log("Sent log to client::: ", message);
   if (sseClient) {
     sseClient.write(`data: ${JSON.stringify({ message })}\n\n`);
-    console.log("Sent log to client::: ", message);
+  }
+}
+
+
+async function scrapeWithRetry(query, options, maxRetries = 3) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await searchAvito(query, options);
+    } catch (error) {
+      if (error.message.includes('blocked') && attempt < maxRetries) {
+        sendLog(`⚠️ Заблокировано. Попытка ${attempt}/${maxRetries}, жду 30 сек...`);
+        await new Promise(resolve => setTimeout(resolve, 30000));
+      } else {
+        throw error;
+      }
+    }
   }
 }
 
 app.post("/scrape", async (req, res) => {
   try {
-    const { query, location } = req.body;
+    const { query, location, locationName } = req.body;
     const maxPages = Number(
       req.body.maxPages || process.env.AVITO_MAX_PAGES || 1,
     );
@@ -36,22 +55,75 @@ app.post("/scrape", async (req, res) => {
     console.log("Received query:", query);
 
     sendLog(
-      `🔍 Запускаю парсинг: "${query}", город: ${location || "rossiya"}, страниц: ${maxPages}`,
+      `🔍 Запускаю парсинг: "${query}", город: ${locationName}, страниц: ${maxPages}`,
     );
 
-    const result = await searchAvitoPages(query.trim(), {
-      location: location || "rossiya",
-      maxPages,
-    });
 
-    sendLog(`✅ Готово! Найдено объявлений: ${result.items.length}`);
-    sendLog(`ℹ️ Остановка: ${result.stopReason}`);
+    const collectedItems = [];
+    const seenIds = new Set();
+    let stopReason = '';
+
+    for (let page = 1; page <= maxPages; page++) {
+      sendLog(`📄 Парсинг страницы ${page}/${maxPages}...`);
+
+
+      const result = await scrapeWithRetry(query.trim(), { location: location || 'rossiya', locationName, page });
+
+
+      if (result.items.length === 0) {
+        stopReason = `Нет объявлений на странице ${page}`;
+        break;
+      }
+
+      const newItems = result.items.filter(item => {
+        if (seenIds.has(item.id)) return false;
+        seenIds.add(item.id);
+        return true;
+      });
+
+      if (newItems.length === 0) {
+        stopReason = `Страница ${page} повторяет уже найденные`;
+        break;
+      }
+
+      for (const item of newItems) {
+        await repo.upsertItem(item);
+      }
+
+      collectedItems.push(...newItems);
+      sendLog(`✅ Страница ${page}: найдено ${newItems.length} новых`);
+
+      try {
+        const allQueryItems = await repo.getItemsByQuery(query.trim());
+        await syncToSheets(allQueryItems, query.trim());
+        sendLog(`📊 Синк в Google Sheets завершён`);
+      } catch (sheetsError) {
+        console.error('Sheets sync failed:', sheetsError.message);
+        sendLog(`❌ Ошибка синка в Sheets: ${sheetsError.message}`);
+      }
+
+      if (page < maxPages) {
+        const delay = 2000 + Math.random() * 5000;
+        sendLog(`⏳ Пауза ${Math.round(delay / 1000)} сек...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+
+    if (!stopReason) stopReason = `Достигнут лимит ${maxPages} страниц`;
+
+    const finalResult = { items: collectedItems, stopReason };
+
+
+
+
+    sendLog(`✅ Готово! Найдено объявлений: ${finalResult.items.length}`);
+    sendLog(`ℹ️ Остановка: ${finalResult.stopReason}`);
 
     res.status(200).json({
       message: "Scrape finished",
       query,
       maxPages,
-      ...result,
+      ...finalResult,
     });
   } catch (error) {
     console.error("Scrape failed:", error);
@@ -71,6 +143,16 @@ app.get("/events", (req, res) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-});
+let repo;
+
+initDb().then((db) => {
+  repo = createItemsRepository(db);
+
+  app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
+  });
+})
+
+
+
+

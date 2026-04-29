@@ -36,7 +36,10 @@
 
       document.getElementById("searchBtn").addEventListener("click", async () => {
           const query = document.getElementById("query").value;
-          const location = document.getElementById("location").value;
+          const locationSelect = document.getElementById("location");
+          const location = locationSelect.value;
+          const locationName = locationSelect.options[locationSelect.selectedIndex].text;
+
 
           if (!query) {
             alert("Please enter a search word");
@@ -48,7 +51,7 @@
             headers: {
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ query, location }),
+            body: JSON.stringify({ query, location, locationName }),
           });
 
           const data = await response.json();
