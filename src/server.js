@@ -5,6 +5,7 @@ const { searchAvito } = require("./provider/avitoProvider");
 const { syncToSheets } = require("./sheets/syncToSheets");
 const { createItemsRepository } = require("./db/itemsRepository");
 const { initDb } = require("./db/initDb");
+const { message } = require("telegraf/filters");
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -17,6 +18,8 @@ app.use(express.static(path.join(__dirname, "public")));
 // });
 
 let sseClient = null;
+let isStopped = false;
+let isRunning = false;
 
 function sendLog(message) {
   console.log("Sent log to client::: ", message);
@@ -54,6 +57,9 @@ app.post("/scrape", async (req, res) => {
 
     console.log("Received query:", query);
 
+    isStopped = false;
+    isRunning = true;
+    
     sendLog(
       `🔍 Запускаю парсинг: "${query}", город: ${locationName}, страниц: ${maxPages}`,
     );
@@ -64,6 +70,12 @@ app.post("/scrape", async (req, res) => {
     let stopReason = '';
 
     for (let page = 1; page <= maxPages; page++) {
+
+      if (isStopped) {
+        sendLog(`🛑 Парсинг остановлен`);
+        break;
+      }
+
       sendLog(`📄 Парсинг страницы ${page}/${maxPages}...`);
 
 
@@ -114,10 +126,10 @@ app.post("/scrape", async (req, res) => {
     const finalResult = { items: collectedItems, stopReason };
 
 
-
-
     sendLog(`✅ Готово! Найдено объявлений: ${finalResult.items.length}`);
     sendLog(`ℹ️ Остановка: ${finalResult.stopReason}`);
+
+    isRunning = false;
 
     res.status(200).json({
       message: "Scrape finished",
@@ -153,6 +165,28 @@ initDb().then((db) => {
   });
 })
 
+
+app.post("/clear", async (req, res) => {
+  try {
+    await repo.clearAllItems()
+    res.status(200).json({message: "База очищена"})
+  } catch (error) {
+    res.status(500).json({message: error.message})
+  }
+})
+
+app.post("/stop", async (req, res) => {
+  if (!isRunning) {
+    return res.status(400).json({message: "Куда жмякаешь? Парсинг не запущен"})
+  }
+  try {
+    isStopped = true;
+    isRunning = false;
+    res.status(200).json({message: "Парсинг остановлен"})
+  } catch (error) {
+    res.status(500).json({message: error.message})
+  }
+})
 
 
 
