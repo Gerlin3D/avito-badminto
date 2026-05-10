@@ -69,4 +69,30 @@ async function syncToSheets(items, sheetNameInput  = 'Объявления') {
   console.log(`✅ Synced ${items.length} items to Google Sheets`);
 }
 
-module.exports = { syncToSheets };
+async function getSheetNames() {
+  if (!SHEET_ID) return [];
+  const sheets = createSheetsClient();
+  const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID });
+  return spreadsheet.data.sheets.map(s => s.properties.title);
+}
+
+async function deleteSheet(sheetName) {
+  if (!SHEET_ID) return;
+  const sheets = createSheetsClient();
+  const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID });
+  const sheet = spreadsheet.data.sheets.find(s => s.properties.title === sheetName);
+  if (!sheet) return;
+  
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: SHEET_ID,
+    requestBody: {
+      requests: [{
+        deleteSheet: {
+          sheetId: sheet.properties.sheetId
+        }
+      }]
+    }
+  });
+}
+
+module.exports = { syncToSheets, getSheetNames, deleteSheet };

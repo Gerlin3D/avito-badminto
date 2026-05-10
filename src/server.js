@@ -68,6 +68,7 @@ app.post("/scrape", async (req, res) => {
     const collectedItems = [];
     const seenIds = new Set();
     let stopReason = '';
+    let parsedPages = 0;
 
     for (let page = 1; page <= maxPages; page++) {
 
@@ -119,11 +120,13 @@ app.post("/scrape", async (req, res) => {
         sendLog(`⏳ Пауза ${Math.round(delay / 1000)} сек...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
+
+      parsedPages++;
     }
 
     if (!stopReason) stopReason = `Достигнут лимит ${maxPages} страниц`;
 
-    const finalResult = { items: collectedItems, stopReason };
+    const finalResult = { items: collectedItems, stopReason, parsedPages};
 
 
     sendLog(`✅ Готово! Найдено объявлений: ${finalResult.items.length}`);

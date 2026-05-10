@@ -135,6 +135,15 @@ function createItemsRepository(db) {
     });
   }
 
+  function deleteItemsByQuery(query) {
+    return new Promise((resolve, reject) => {
+      db.run('DELETE FROM items WHERE query = ?', [query], function (err) {
+        if (err) return reject(err);
+        resolve(this.changes);
+      })
+    })
+  }
+
   return {
     upsertItem,
     markAsNotified,
@@ -144,6 +153,7 @@ function createItemsRepository(db) {
     deleteOldItems,
     clearAllItems,
     getItemsByQuery,
+    deleteItemsByQuery,
   };
 }
 

@@ -19,7 +19,7 @@
           type="text"
           id="query"
           placeholder="Enter search word"
-          class="border rounded px-3 py-2 bg-blue-100 focus:outline-none focus:ring-2 focus:ring-blue-400"
+          class="border border-blue-500 rounded px-3 py-2 bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-400"
         />
         <select id="location" class="border rounded px-3 py-2">
           <option value="rossiya">Вся россия</option>
@@ -109,7 +109,7 @@
           const log = document.getElementById("log");
           // log.classList.remove("text-red-400");
           log.textContent = data.items
-            ? `Найдено: ${data.items.length} объявлений\n`
+            ? `Найдено: ${data.items.length} объявлений на ${data.parsedPages} страницах\n`
             : `Ошибка: ${data.message}`;
         });
 
