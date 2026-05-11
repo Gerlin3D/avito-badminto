@@ -2,7 +2,7 @@ const express = require("express");
 require("dotenv").config();
 const path = require("path");
 const { searchAvito } = require("./provider/avitoProvider");
-const { syncToSheets } = require("./sheets/syncToSheets");
+const { syncToSheets, getSheetNames, deleteSheet } = require("./sheets/syncToSheets");
 const { createItemsRepository } = require("./db/itemsRepository");
 const { initDb } = require("./db/initDb");
 const { message } = require("telegraf/filters");
@@ -169,7 +169,7 @@ initDb().then((db) => {
 })
 
 
-app.post("/clear", async (req, res) => {
+app.delete("/clear", async (req, res) => {
   try {
     await repo.clearAllItems()
     res.status(200).json({message: "База очищена"})
@@ -186,6 +186,26 @@ app.post("/stop", async (req, res) => {
     isStopped = true;
     isRunning = false;
     res.status(200).json({message: "Парсинг остановлен"})
+  } catch (error) {
+    res.status(500).json({message: error.message})
+  }
+})
+
+app.get("/queries", async (req, res) => {
+  try {
+    const queries = await getSheetNames();
+    res.json({ queries })
+  } catch (error) {
+    res.status(500).json({message: error.message})
+  }
+})
+
+app.delete("/queries/:query", async (req, res) => {
+  try {
+    const query = decodeURIComponent(req.params.query);
+    await repo.deleteItemsByQuery(query);
+    await deleteSheet(query);
+    res.json({ message: `Удалены объявления для запроса "${query}"` })
   } catch (error) {
     res.status(500).json({message: error.message})
   }

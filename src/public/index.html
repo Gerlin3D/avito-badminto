@@ -62,7 +62,7 @@
             Очистить ВСЕ!!!
           </button>
         </div>
-        <div id="queryCards" class="flex flex-col gap-2 mt-4"></div>
+        <div id="queryCards" class="flex flex-col gap-2 mt-4">Здесь будут отображаться запросы</div>
       </div>
     </div>
 
@@ -72,7 +72,7 @@
       evnSource.onmessage = (event) => {
         const data = JSON.parse(event.data);
         const logEl = document.getElementById("log");
-        logEl.textContent = ""
+        // logEl.textContent = ""
         logEl.classList.remove("text-red-400", "text-yellow-400");
         logEl.textContent += (logEl.textContent ? "\n" : "") + data.message;
       };
@@ -104,10 +104,11 @@
             body: JSON.stringify({ query, location, locationName }),
           });
 
+          loadCards()
+
           const data = await response.json();
 
           const log = document.getElementById("log");
-          // log.classList.remove("text-red-400");
           log.textContent = data.items
             ? `Найдено: ${data.items.length} объявлений на ${data.parsedPages} страницах\n`
             : `Ошибка: ${data.message}`;
@@ -118,9 +119,10 @@
         .addEventListener("click", async () => {
           if (!confirm("Очистить всю базу?")) return;
 
-          const response = await fetch("/clear", { method: "POST" });
+          const response = await fetch("/clear", { method: "DELETE" });
           const data = await response.json();
           document.getElementById("log").textContent = data.message;
+          loadCards()
         });
 
       document.getElementById("stopBtn").addEventListener("click", async () => {
@@ -131,6 +133,52 @@
         const data = await response.json();
         log.textContent = data.message;
       });
+
+      let isLoadingCards = false
+
+      async function loadCards() {
+        if(isLoadingCards) return
+        isLoadingCards = true
+
+        const container = document.getElementById("queryCards");
+        container.innerHTML = "Loading...";
+
+        try {
+          const response = await fetch("/queries")
+          const data = await response.json();
+
+          container.innerHTML = ""
+  
+          data.queries.forEach(query => {
+            const card = document.createElement("div")
+            card.className = "bg-gray-100 p-3 rounded shadow flex items-center justify-between";
+            card.innerHTML = `
+              <span class="text-gray-700">${query}</span>
+              <button onClick="deleteQuery('${query}')" class="bg-red-200 hover:bg-red-300 active:bg-red-400 text-red-700 font-bold py-1 px-3 rounded delete-btn">
+                Delete
+              </button>`;
+            container.appendChild(card);
+          });
+          
+        } catch (error) {
+          container.innerHTML = `<p class="text-red-500">Error loading queries: ${error.message}</p>`;
+        } finally {
+          isLoadingCards = false;
+        }
+      }
+
+      async function deleteQuery(query) {
+        if(!confirm(`Удалить все объявления для запроса '${query}'?`)) return
+        
+        const response = await fetch(`/queries/${encodeURIComponent(query)}`, { method: "DELETE" });
+        const data = await response.json();
+        const log = document.getElementById("log");
+        log.textContent = data.message;
+
+        loadCards();
+      }
+
+      loadCards()
     </script>
   </body>
 </html>
