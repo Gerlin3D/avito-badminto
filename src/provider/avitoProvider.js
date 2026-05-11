@@ -212,7 +212,7 @@ async function searchAvitoPage(page, query, options = {}) {
 
   await page.goto(searchUrl, {
     waitUntil: 'domcontentloaded',
-    timeout: 30000,
+    timeout: 60000,
   });
 
   await page
