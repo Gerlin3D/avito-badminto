@@ -98,6 +98,19 @@ function createItemsRepository(db) {
     });
   }
 
+  function getItemsByQuery(query) {
+    return new Promise((resolve, reject) => {
+      db.all(
+        'SELECT * FROM items WHERE query = ? ORDER BY first_seen_at DESC',
+        [query],
+        (err, rows) => {
+          if (err) return reject(err);
+          resolve(rows);
+        }
+      );
+    });
+  }
+
   function deleteOldItems(days = 30) {
     return new Promise((resolve, reject) => {
       const query = `
@@ -122,6 +135,15 @@ function createItemsRepository(db) {
     });
   }
 
+  function deleteItemsByQuery(query) {
+    return new Promise((resolve, reject) => {
+      db.run('DELETE FROM items WHERE query = ?', [query], function (err) {
+        if (err) return reject(err);
+        resolve(this.changes);
+      })
+    })
+  }
+
   return {
     upsertItem,
     markAsNotified,
@@ -129,7 +151,9 @@ function createItemsRepository(db) {
     getAllItems,
     deactivateOldItems,
     deleteOldItems,
-    clearAllItems
+    clearAllItems,
+    getItemsByQuery,
+    deleteItemsByQuery,
   };
 }
 

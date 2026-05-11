@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Avito Parser</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+
+  <body class="bg-gray-200 p-6">
+    <header class="flex items-end gap-10">
+      <h1 class="text-2xl font-bold">Avito Parser</h1>
+      <p class="text-gray-600">Welcome to the Avito Parser!</p>
+    </header>
+
+    <div class="grid grid-cols-[500px_1fr] gap-4 mt-6">
+      <div class="flex flex-col gap-4">
+        <input
+          type="text"
+          id="query"
+          placeholder="Enter search word"
+          class="border border-blue-500 rounded px-3 py-2 bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-400"
+        />
+        <select id="location" class="border rounded px-3 py-2">
+          <option value="rossiya">Вся россия</option>
+          <option value="sankt-peterburg">Санкт-Петербург</option>
+          <option value="moskva">Москва</option>
+          <option value="novosibirsk">Новосибирск</option>
+          <option value="yekaterinburg">Екатеринбург</option>
+          <option value="nizhniy_novgorod">Нижний Новгород</option>
+          <option value="samara">Самара</option>
+          <option value="krasnodar">Краснодар</option>
+        </select>
+
+        <button
+          id="searchBtn"
+          class="bg-blue-500 hover:bg-blue-700 active:bg-blue-600 text-white font-bold py-2 px-4 rounded my-3"
+        >
+          Search
+        </button>
+
+        <button
+          id="stopBtn"
+          class="bg-yellow-500 hover:bg-yellow-700 active:bg-yellow-600 text-white font-bold py-2 px-4 rounded"
+        >
+          Stop
+        </button>
+
+        <pre
+          id="log"
+          class="bg-gray-900 text-green-400 rounded p-4 text-sm min-h-48 overflow-auto whitespace-pre-wrap"
+        ></pre>
+      </div>
+
+      <div class="bg-white p-4 rounded shadow min-h-screen">
+        <div class="flex items-center justify-between">
+          <h2 class="text-xl font-semibold mb-2 text-gray-600">Запросы</h2>
+          <button
+            id="clearBtn"
+            class="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded"
+          >
+            Очистить ВСЕ!!!
+          </button>
+        </div>
+        <div id="queryCards" class="flex flex-col gap-2 mt-4">Здесь будут отображаться запросы</div>
+      </div>
+    </div>
+
+    <script>
+      const evnSource = new EventSource("/events");
+
+      evnSource.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        const logEl = document.getElementById("log");
+        // logEl.textContent = ""
+        logEl.classList.remove("text-red-400", "text-yellow-400");
+        logEl.textContent += (logEl.textContent ? "\n" : "") + data.message;
+      };
+
+      document
+        .getElementById("searchBtn")
+        .addEventListener("click", async () => {
+          const query = document
+            .getElementById("query")
+            .value.trim()
+            .toLowerCase();
+          const locationSelect = document.getElementById("location");
+          const location = locationSelect.value;
+          const locationName =
+            locationSelect.options[locationSelect.selectedIndex].text;
+
+          if (!query) {
+            const log = document.getElementById("log");
+            log.classList.add("text-red-400");
+            log.textContent = "Please enter a search word";
+            return;
+          }
+
+          const response = await fetch(`/scrape`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ query, location, locationName }),
+          });
+
+          loadCards()
+
+          const data = await response.json();
+
+          const log = document.getElementById("log");
+          log.textContent = data.items
+            ? `Найдено: ${data.items.length} объявлений на ${data.parsedPages} страницах\n`
+            : `Ошибка: ${data.message}`;
+        });
+
+      document
+        .getElementById("clearBtn")
+        .addEventListener("click", async () => {
+          if (!confirm("Очистить всю базу?")) return;
+
+          const response = await fetch("/clear", { method: "DELETE" });
+          const data = await response.json();
+          document.getElementById("log").textContent = data.message;
+          loadCards()
+        });
+
+      document.getElementById("stopBtn").addEventListener("click", async () => {
+        const log = document.getElementById("log");
+        log.classList.add("text-yellow-400");
+        log.textContent = "Завершение поиска...";
+        const response = await fetch("/stop", { method: "POST" });
+        const data = await response.json();
+        log.textContent = data.message;
+      });
+
+      let isLoadingCards = false
+
+      async function loadCards() {
+        if(isLoadingCards) return
+        isLoadingCards = true
+
+        const container = document.getElementById("queryCards");
+        container.innerHTML = "Loading...";
+
+        try {
+          const response = await fetch("/queries")
+          const data = await response.json();
+
+          container.innerHTML = ""
+  
+          data.queries.forEach(query => {
+            const card = document.createElement("div")
+            card.className = "bg-gray-100 p-3 rounded shadow flex items-center justify-between";
+            card.innerHTML = `
+              <span class="text-gray-700">${query}</span>
+              <button onClick="deleteQuery('${query}')" class="bg-red-200 hover:bg-red-300 active:bg-red-400 text-red-700 font-bold py-1 px-3 rounded delete-btn">
+                Delete
+              </button>`;
+            container.appendChild(card);
+          });
+          
+        } catch (error) {
+          container.innerHTML = `<p class="text-red-500">Error loading queries: ${error.message}</p>`;
+        } finally {
+          isLoadingCards = false;
+        }
+      }
+
+      async function deleteQuery(query) {
+        if(!confirm(`Удалить все объявления для запроса '${query}'?`)) return
+        
+        const response = await fetch(`/queries/${encodeURIComponent(query)}`, { method: "DELETE" });
+        const data = await response.json();
+        const log = document.getElementById("log");
+        log.textContent = data.message;
+
+        loadCards();
+      }
+
+      loadCards()
+    </script>
+  </body>
+</html>

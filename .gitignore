@@ -3,3 +3,5 @@ node_modules
 debug-avito.html
 src/storage/pw-profile
 src/storage/*.db
+
+src/sheets/credentials.json
