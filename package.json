@@ -22,7 +22,7 @@
     "patchright": "^1.59.4",
     "playwright": "^1.59.1",
     "socks-proxy-agent": "^10.0.0",
-    "sqlite3": "^6.0.1",
+    "sqlite3": "^5.1.6",
     "telegraf": "^4.16.3"
   },
   "type": "commonjs",
