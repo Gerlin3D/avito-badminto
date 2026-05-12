@@ -3,6 +3,53 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const { chromium } = require('patchright');
+const http = require('http');
+const net = require('net');
+
+const RELAY_PORT = 8889;
+let relayServer = null;
+
+function startProxyRelay({ server, username, password }) {
+  if (relayServer) return;
+
+  const auth = Buffer.from(`${username}:${password}`).toString('base64');
+  const [host, portStr] = server.replace(/^https?:\/\//, '').split(':');
+  const port = parseInt(portStr, 10);
+
+  relayServer = http.createServer((req, res) => { res.writeHead(405).end(); });
+
+  relayServer.on('connect', (req, clientSocket, head) => {
+    const conn = net.connect(port, host, () => {
+      conn.write(
+        `CONNECT ${req.url} HTTP/1.1\r\n` +
+        `Host: ${req.url}\r\n` +
+        `Proxy-Authorization: Basic ${auth}\r\n` +
+        `Connection: keep-alive\r\n\r\n`
+      );
+    });
+
+    conn.once('data', (chunk) => {
+      if (chunk.toString().includes('200')) {
+        clientSocket.write('HTTP/1.1 200 Connection established\r\n\r\n');
+        if (head && head.length) conn.write(head);
+        conn.pipe(clientSocket);
+        clientSocket.pipe(conn);
+      } else {
+        clientSocket.write('HTTP/1.1 502 Bad Gateway\r\n\r\n');
+        clientSocket.end();
+        conn.destroy();
+      }
+    });
+
+    conn.on('error', () => { clientSocket.write('HTTP/1.1 502 Bad Gateway\r\n\r\n'); clientSocket.end(); });
+    clientSocket.on('error', () => conn.destroy());
+  });
+
+  relayServer.listen(RELAY_PORT, '127.0.0.1', () => {
+    console.log(`Proxy relay started on localhost:${RELAY_PORT}`);
+  });
+}
+
 
 const BASE_URL = 'https://www.avito.ru';
 
@@ -34,11 +81,12 @@ function getProxyConfig() {
     );
   }
 
-  return {
-    server,
-    username: username || undefined,
-    password: password || undefined,
-  };
+  if (username && password) {
+    startProxyRelay({ server, username, password });
+    return { server: `http://127.0.0.1:${RELAY_PORT}` };
+  }
+
+  return { server };
 }
 
 function getHeadlessMode() {
