@@ -3,6 +3,8 @@ const optionalEnv = [
   'AVITO_PROXY_SERVER',
   'AVITO_PROXY_USERNAME',
   'AVITO_PROXY_PASSWORD',
+  'AVITO_PROXY_PORT_START',
+  'AVITO_PROXY_PORT_END',
   'AVITO_HEADLESS',
 ].reduce((env, key) => {
   if (process.env[key]) {
@@ -18,7 +20,6 @@ module.exports = {
     env: {
       NODE_ENV: 'production',
       ...optionalEnv,
-e',
     }
   }]
 };

@@ -27,8 +27,16 @@ function buildSearchUrl({ query, location = 'rossiya', page = 1 }) {
 let _currentProxyPort = null;
 
 function getNextProxyPort() {
-  const start = parseInt(process.env.AVITO_PROXY_PORT_START || '10000', 10);
+  if (!process.env.AVITO_PROXY_PORT_START) {
+    return null;
+  }
+
+  const start = parseInt(process.env.AVITO_PROXY_PORT_START, 10);
   const end = parseInt(process.env.AVITO_PROXY_PORT_END || start.toString(), 10);
+  if (!Number.isInteger(start) || !Number.isInteger(end)) {
+    throw new Error('Invalid AVITO_PROXY_PORT_START or AVITO_PROXY_PORT_END');
+  }
+
   if (start === end) return start;
   if (_currentProxyPort === null || _currentProxyPort >= end) {
     _currentProxyPort = start;
@@ -49,7 +57,7 @@ function getProxyConfig() {
 
   // Подставляем текущий порт ротации
   const port = getNextProxyPort();
-  const serverWithPort = server.replace(/:\d+$/, `:${port}`);
+  const serverWithPort = port ? server.replace(/:\d+$/, `:${port}`) : server;
 
   const validScheme =
     serverWithPort.startsWith('http://') ||
@@ -62,7 +70,7 @@ function getProxyConfig() {
     );
   }
 
-  const proxyUrl = new URL(server);
+  const proxyUrl = new URL(serverWithPort);
   const username =
     process.env.AVITO_PROXY_USERNAME?.trim() ||
     decodeURIComponent(proxyUrl.username || '');
