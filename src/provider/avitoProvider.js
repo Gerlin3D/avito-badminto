@@ -128,10 +128,7 @@ function attachPageLogging(page) {
 
 async function createAvitoSession() {
   const proxy = getProxyConfig();
-  const profileKey = proxy
-    ? proxy.server.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '')
-    : 'direct';
-  const userDataDir = path.join(__dirname, '..', 'storage', `pw-profile-${profileKey}`);
+  const userDataDir = path.join(__dirname, '..', 'storage', 'pw-profile');
   const lockFile = path.join(userDataDir, 'SingletonLock');
   if (fs.existsSync(lockFile)) {
     fs.unlinkSync(lockFile);
