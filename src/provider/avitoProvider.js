@@ -3,8 +3,6 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const { chromium } = require('patchright');
-const http = require('http');
-const net = require('net');
 
 let _persistentSession = null;
 
@@ -13,51 +11,6 @@ async function getOrCreateSession() {
     _persistentSession = await createAvitoSession();
   }
   return _persistentSession;
-}
-
-
-const RELAY_PORT = 8889;
-let relayServer = null;
-
-function startProxyRelay({ server, username, password }) {
-  if (relayServer) return;
-
-  const auth = Buffer.from(`${username}:${password}`).toString('base64');
-  const [host, portStr] = server.replace(/^https?:\/\//, '').split(':');
-  const port = parseInt(portStr, 10);
-
-  relayServer = http.createServer((req, res) => { res.writeHead(405).end(); });
-
-  relayServer.on('connect', (req, clientSocket, head) => {
-    const conn = net.connect(port, host, () => {
-      conn.write(
-        `CONNECT ${req.url} HTTP/1.1\r\n` +
-        `Host: ${req.url}\r\n` +
-        `Proxy-Authorization: Basic ${auth}\r\n` +
-        `Connection: keep-alive\r\n\r\n`
-      );
-    });
-
-    conn.once('data', (chunk) => {
-      if (chunk.toString().includes('200')) {
-        clientSocket.write('HTTP/1.1 200 Connection established\r\n\r\n');
-        if (head && head.length) conn.write(head);
-        conn.pipe(clientSocket);
-        clientSocket.pipe(conn);
-      } else {
-        clientSocket.write('HTTP/1.1 502 Bad Gateway\r\n\r\n');
-        clientSocket.end();
-        conn.destroy();
-      }
-    });
-
-    conn.on('error', () => { clientSocket.write('HTTP/1.1 502 Bad Gateway\r\n\r\n'); clientSocket.end(); });
-    clientSocket.on('error', () => conn.destroy());
-  });
-
-  relayServer.listen(RELAY_PORT, '127.0.0.1', () => {
-    console.log(`Proxy relay started on localhost:${RELAY_PORT}`);
-  });
 }
 
 
@@ -73,8 +26,6 @@ function buildSearchUrl({ query, location = 'rossiya', page = 1 }) {
 function getProxyConfig() {
   const enabled = process.env.AVITO_PROXY_ENABLED === 'true';
   const server = process.env.AVITO_PROXY_SERVER?.trim();
-  const username = process.env.AVITO_PROXY_USERNAME?.trim();
-  const password = process.env.AVITO_PROXY_PASSWORD?.trim();
 
   if (!enabled || !server) {
     return undefined;
@@ -91,12 +42,28 @@ function getProxyConfig() {
     );
   }
 
-  if (username && password) {
-    startProxyRelay({ server, username, password });
-    return { server: `http://127.0.0.1:${RELAY_PORT}` };
+  const proxyUrl = new URL(server);
+  const username =
+    process.env.AVITO_PROXY_USERNAME?.trim() ||
+    decodeURIComponent(proxyUrl.username || '');
+  const password =
+    process.env.AVITO_PROXY_PASSWORD?.trim() ||
+    decodeURIComponent(proxyUrl.password || '');
+
+  proxyUrl.username = '';
+  proxyUrl.password = '';
+
+  const proxy = { server: proxyUrl.toString() };
+
+  if (username) {
+    proxy.username = username;
   }
 
-  return { server };
+  if (password) {
+    proxy.password = password;
+  }
+
+  return proxy;
 }
 
 function getHeadlessMode() {
@@ -138,6 +105,7 @@ async function createAvitoSession() {
   console.log('Proxy enabled:', Boolean(proxy));
   if (proxy) {
     console.log('Proxy server:', proxy.server);
+    console.log('Proxy auth:', Boolean(proxy.username || proxy.password));
   }
 
   const context = await chromium.launchPersistentContext(userDataDir, {
