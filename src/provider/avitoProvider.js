@@ -126,6 +126,11 @@ function attachPageLogging(page) {
 
 async function createAvitoSession() {
   const userDataDir = path.join(__dirname, '..', 'storage', 'pw-profile');
+  const lockFile = path.join(userDataDir, 'SingletonLock');
+  if (fs.existsSync(lockFile)) {
+    fs.unlinkSync(lockFile);
+    console.log('Removed stale SingletonLock');
+  }
   const proxy = getProxyConfig();
   const headless = getHeadlessMode();
 
