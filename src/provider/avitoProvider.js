@@ -13,6 +13,13 @@ async function getOrCreateSession() {
   return _persistentSession;
 }
 
+async function resetSession() {
+  if (_persistentSession) {
+    await _persistentSession.close().catch(() => {});
+    _persistentSession = null;
+  }
+}
+
 
 const BASE_URL = 'https://www.avito.ru';
 
@@ -120,13 +127,16 @@ function attachPageLogging(page) {
 }
 
 async function createAvitoSession() {
-  const userDataDir = path.join(__dirname, '..', 'storage', 'pw-profile');
+  const proxy = getProxyConfig();
+  const profileKey = proxy
+    ? proxy.server.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '')
+    : 'direct';
+  const userDataDir = path.join(__dirname, '..', 'storage', `pw-profile-${profileKey}`);
   const lockFile = path.join(userDataDir, 'SingletonLock');
   if (fs.existsSync(lockFile)) {
     fs.unlinkSync(lockFile);
     console.log('Removed stale SingletonLock');
   }
-  const proxy = getProxyConfig();
   const headless = getHeadlessMode();
 
   console.log('Launching Avito browser context');
@@ -393,7 +403,14 @@ async function searchAvitoPages(query, options = {}) {
 
 async function searchAvito(query, options = {}) {
   const session = await getOrCreateSession();
-  return await searchAvitoPage(session.page, query, options);
+  try {
+    return await searchAvitoPage(session.page, query, options);
+  } catch (error) {
+    if (error.message.includes('blocked')) {
+      await resetSession();
+    }
+    throw error;
+  }
   // НЕ закрываем сессию
 }
 
@@ -430,10 +447,7 @@ async function canReachAvitoWithProxy() {
 }
 
 async function closeSession() {
-  if (_persistentSession) {
-    await _persistentSession.close().catch(() => {});
-    _persistentSession = null;
-  }
+  await resetSession();
 }
 
 process.on('SIGTERM', async () => { await closeSession(); process.exit(0); });
