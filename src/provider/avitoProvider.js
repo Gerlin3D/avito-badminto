@@ -6,6 +6,16 @@ const { chromium } = require('patchright');
 const http = require('http');
 const net = require('net');
 
+let _persistentSession = null;
+
+async function getOrCreateSession() {
+  if (!_persistentSession) {
+    _persistentSession = await createAvitoSession();
+  }
+  return _persistentSession;
+}
+
+
 const RELAY_PORT = 8889;
 let relayServer = null;
 
@@ -269,6 +279,11 @@ async function searchAvitoPage(page, query, options = {}) {
     })
     .catch(() => {});
 
+  // Добавить после waitForSelector
+  await page.evaluate(() => window.scrollBy(0, Math.random() * 400 + 100));
+  await page.waitForTimeout(800 + Math.random() * 1500);
+
+
   const finalUrl = page.url();
   const title = await page.title();
   const html = await page.content();
@@ -372,14 +387,9 @@ async function searchAvitoPages(query, options = {}) {
 }
 
 async function searchAvito(query, options = {}) {
-  const session = await createAvitoSession();
-
-  try {
-    return await searchAvitoPage(session.page, query, options);
-  } finally {
-    console.log('Closing Avito browser context');
-    await session.close();
-  }
+  const session = await getOrCreateSession();
+  return await searchAvitoPage(session.page, query, options);
+  // НЕ закрываем сессию
 }
 
 async function canReachAvitoWithProxy() {
@@ -388,7 +398,12 @@ async function canReachAvitoWithProxy() {
   const browser = await chromium.launch({
     headless: true,
     proxy,
-    args: ['--no-sandbox'],
+    args: [
+      '--no-sandbox',
+      '--disable-blink-features=AutomationControlled',
+      '--disable-features=IsolateOrigins,site-per-process',
+      '--disable-web-security',
+    ],
   });
 
   try {
@@ -408,6 +423,16 @@ async function canReachAvitoWithProxy() {
     await browser.close();
   }
 }
+
+async function closeSession() {
+  if (_persistentSession) {
+    await _persistentSession.close().catch(() => {});
+    _persistentSession = null;
+  }
+}
+
+process.on('SIGTERM', async () => { await closeSession(); process.exit(0); });
+process.on('SIGINT', async () => { await closeSession(); process.exit(0); });
 
 module.exports = {
   searchAvito,
