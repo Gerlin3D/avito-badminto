@@ -23,6 +23,22 @@ function buildSearchUrl({ query, location = 'rossiya', page = 1 }) {
   return url.toString();
 }
 
+// Ротация портов прокси: AVITO_PROXY_PORT_START=10000, AVITO_PROXY_PORT_END=10100
+let _currentProxyPort = null;
+
+function getNextProxyPort() {
+  const start = parseInt(process.env.AVITO_PROXY_PORT_START || '10000', 10);
+  const end = parseInt(process.env.AVITO_PROXY_PORT_END || start.toString(), 10);
+  if (start === end) return start;
+  if (_currentProxyPort === null || _currentProxyPort >= end) {
+    _currentProxyPort = start;
+  } else {
+    _currentProxyPort++;
+  }
+  console.log(`Using proxy port: ${_currentProxyPort}`);
+  return _currentProxyPort;
+}
+
 function getProxyConfig() {
   const enabled = process.env.AVITO_PROXY_ENABLED === 'true';
   const server = process.env.AVITO_PROXY_SERVER?.trim();
@@ -31,10 +47,14 @@ function getProxyConfig() {
     return undefined;
   }
 
+  // Подставляем текущий порт ротации
+  const port = getNextProxyPort();
+  const serverWithPort = server.replace(/:\d+$/, `:${port}`);
+
   const validScheme =
-    server.startsWith('http://') ||
-    server.startsWith('https://') ||
-    server.startsWith('socks5://');
+    serverWithPort.startsWith('http://') ||
+    serverWithPort.startsWith('https://') ||
+    serverWithPort.startsWith('socks5://');
 
   if (!validScheme) {
     throw new Error(
@@ -114,7 +134,11 @@ async function createAvitoSession() {
     locale: 'ru-RU',
     viewport: { width: 1440, height: 900 },
     proxy,
-    args: ['--no-sandbox'],
+    args: [
+      ...(process.getuid && process.getuid() === 0 ? ['--no-sandbox', '--disable-setuid-sandbox'] : []),
+      '--disable-blink-features=AutomationControlled',
+      '--disable-features=IsolateOrigins,site-per-process',
+    ],
   });
 
   const page = context.pages()[0] || (await context.newPage());
