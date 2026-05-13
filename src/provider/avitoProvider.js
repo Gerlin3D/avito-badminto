@@ -65,19 +65,25 @@ function getNextProxyPort() {
 
   const start = parseInt(process.env.AVITO_PROXY_PORT_START, 10);
   const end = parseInt(process.env.AVITO_PROXY_PORT_END || start.toString(), 10);
+
   if (!Number.isInteger(start) || !Number.isInteger(end)) {
     throw new Error('Invalid AVITO_PROXY_PORT_START or AVITO_PROXY_PORT_END');
   }
 
-  if (start === end) return start;
-  if (_currentProxyPort === null || _currentProxyPort >= end) {
-    _currentProxyPort = start;
-  } else {
-    _currentProxyPort++;
+  if (end < start) {
+    throw new Error('AVITO_PROXY_PORT_END must be greater than or equal to AVITO_PROXY_PORT_START');
   }
-  console.log(`Using proxy port: ${_currentProxyPort}`);
-  return _currentProxyPort;
+
+  if (start === end) {
+    console.log(`Using proxy port: ${start}`);
+    return start;
+  }
+
+  const port = start + Math.floor(Math.random() * (end - start + 1));
+  console.log(`Using proxy port: ${port}`);
+  return port;
 }
+
 
 function getProxyConfig() {
   const enabled = process.env.AVITO_PROXY_ENABLED === 'true';
