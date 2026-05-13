@@ -1,7 +1,7 @@
 const express = require("express");
 require("dotenv").config();
 const path = require("path");
-const { searchAvito } = require("./provider/avitoProvider");
+const { searchAvito, isRetryableProxyError, closeSession } = require("./provider/avitoProvider");
 const { syncToSheets, getSheetNames, deleteSheet } = require("./sheets/syncToSheets");
 const { createItemsRepository } = require("./db/itemsRepository");
 const { initDb } = require("./db/initDb");
@@ -28,15 +28,39 @@ function sendLog(message) {
   }
 }
 
+function throwIfStopped() {
+  if (isStopped) {
+    throw new Error('Parsing stopped');
+  }
+}
 
-async function scrapeWithRetry(query, options, maxRetries = 3) {
+async function sleepWithStop(ms) {
+  const step = 500;
+  let elapsed = 0;
+
+  while (elapsed < ms) {
+    throwIfStopped();
+    const wait = Math.min(step, ms - elapsed);
+    await new Promise(resolve => setTimeout(resolve, wait));
+    elapsed += wait;
+  }
+}
+
+
+async function scrapeWithRetry(query, options, maxRetries = Number(process.env.AVITO_MAX_RETRIES || 10)) {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
+      throwIfStopped();
       return await searchAvito(query, options);
     } catch (error) {
-      if (error.message.includes('blocked') && attempt < maxRetries) {
-        sendLog(`⚠️ Заблокировано. Попытка ${attempt}/${maxRetries}, жду 30 сек...`);
-        await new Promise(resolve => setTimeout(resolve, 30000));
+      if (error.message === 'Parsing stopped') {
+        throw error;
+      }
+
+      if ((error.message.includes('blocked') || isRetryableProxyError(error)) && attempt < maxRetries) {
+        sendLog(`⚠️ Ошибка Avito/proxy: ${error.message}. Попытка ${attempt}/${maxRetries}, жду 30 сек...`);
+        await closeSession();
+        await sleepWithStop(30000);
       } else {
         throw error;
       }
@@ -133,6 +157,7 @@ app.post("/scrape", async (req, res) => {
     sendLog(`ℹ️ Остановка: ${finalResult.stopReason}`);
 
     isRunning = false;
+    await closeSession();
 
     res.status(200).json({
       message: "Scrape finished",
@@ -184,6 +209,7 @@ app.post("/stop", async (req, res) => {
   }
   try {
     isStopped = true;
+    await closeSession();
     isRunning = false;
     res.status(200).json({message: "Парсинг остановлен"})
   } catch (error) {

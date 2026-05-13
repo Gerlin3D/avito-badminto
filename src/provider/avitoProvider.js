@@ -20,8 +20,33 @@ async function resetSession() {
   }
 }
 
+async function resetBlockedSession() {
+  await resetSession();
+  const userDataDir = getUserDataDir();
+  if (fs.existsSync(userDataDir)) {
+    fs.rmSync(userDataDir, { recursive: true, force: true });
+    console.log('Removed blocked Avito browser profile');
+  }
+}
+
+function isRetryableProxyError(error) {
+  const message = error?.message || '';
+  return (
+    message.includes('ERR_TUNNEL_CONNECTION_FAILED') ||
+    message.includes('ERR_PROXY_CONNECTION_FAILED') ||
+    message.includes('ERR_SOCKS_CONNECTION_FAILED') ||
+    message.includes('ERR_TIMED_OUT') ||
+    message.includes('ERR_CONNECTION_CLOSED') ||
+    message.includes('ERR_CONNECTION_RESET')
+  );
+}
+
 
 const BASE_URL = 'https://www.avito.ru';
+
+function getUserDataDir() {
+  return path.join(__dirname, '..', 'storage', 'pw-profile');
+}
 
 function buildSearchUrl({ query, location = 'rossiya', page = 1 }) {
   const url = new URL(`${BASE_URL}/${location}`);
@@ -128,7 +153,7 @@ function attachPageLogging(page) {
 
 async function createAvitoSession() {
   const proxy = getProxyConfig();
-  const userDataDir = path.join(__dirname, '..', 'storage', 'pw-profile');
+  const userDataDir = getUserDataDir();
   const lockFile = path.join(userDataDir, 'SingletonLock');
   if (fs.existsSync(lockFile)) {
     fs.unlinkSync(lockFile);
@@ -151,6 +176,7 @@ async function createAvitoSession() {
     proxy,
     args: [
       ...(process.getuid && process.getuid() === 0 ? ['--no-sandbox', '--disable-setuid-sandbox'] : []),
+      ...(!proxy ? ['--no-proxy-server'] : []),
       '--disable-blink-features=AutomationControlled',
       '--disable-features=IsolateOrigins,site-per-process',
     ],
@@ -404,6 +430,8 @@ async function searchAvito(query, options = {}) {
     return await searchAvitoPage(session.page, query, options);
   } catch (error) {
     if (error.message.includes('blocked')) {
+      await resetBlockedSession();
+    } else if (isRetryableProxyError(error)) {
       await resetSession();
     }
     throw error;
@@ -419,6 +447,7 @@ async function canReachAvitoWithProxy() {
     proxy,
     args: [
       '--no-sandbox',
+      ...(!proxy ? ['--no-proxy-server'] : []),
       '--disable-blink-features=AutomationControlled',
       '--disable-features=IsolateOrigins,site-per-process',
       '--disable-web-security',
@@ -456,4 +485,6 @@ module.exports = {
   searchAvitoPages,
   createAvitoSession,
   canReachAvitoWithProxy,
+  isRetryableProxyError,
+  closeSession,
 };
