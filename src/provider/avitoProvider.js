@@ -285,6 +285,9 @@ async function parseCurrentPage(page, query) {
       const priceEl = item.querySelector('[data-marker="item-price"]');
       const price = parsePrice(priceEl?.textContent || '');
 
+      const descMeta = item.querySelector('meta[itemprop="description"]');
+      const description = descMeta?.getAttribute('content')?.trim().replace(/\s+/g, ' ') || null;
+
       results.push({
         id,
         title: title.replace(/\s+/g, ' '),
@@ -294,6 +297,7 @@ async function parseCurrentPage(page, query) {
         seller_name: null,
         category: detectCategory(title, searchQuery),
         query: searchQuery,
+        description,
       });
 
       seen.add(id);

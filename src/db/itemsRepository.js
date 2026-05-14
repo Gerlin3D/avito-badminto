@@ -3,16 +3,17 @@ function createItemsRepository(db) {
     return new Promise((resolve, reject) => {
       const query = `
         INSERT INTO items (
-          id, title, price, url, location, seller_name, category, query,
+          id, title, price, url, location, seller_name, description, category, query,
           first_seen_at, last_seen_at, last_notified_at, is_active
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
         ON CONFLICT(id) DO UPDATE SET
           title = excluded.title,
           price = excluded.price,
           url = excluded.url,
           location = excluded.location,
           seller_name = excluded.seller_name,
+          description = excluded.description,
           category = excluded.category,
           query = excluded.query,
           last_seen_at = excluded.last_seen_at,
@@ -30,6 +31,7 @@ function createItemsRepository(db) {
           item.url,
           item.location,
           item.seller_name,
+          item.description || null,
           item.category,
           item.query,
           item.first_seen_at || now,

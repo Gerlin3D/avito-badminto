@@ -29,8 +29,12 @@ function initDb() {
           return;
         }
 
-        console.log('✅ Schema initialized');
-        resolve(db);
+        // Migrate existing DBs: add description column if missing
+        db.run('ALTER TABLE items ADD COLUMN description TEXT', (alterErr) => {
+          // SQLITE_ERROR means column already exists — that's fine
+          console.log('✅ Schema initialized');
+          resolve(db);
+        });
       });
     });
   });

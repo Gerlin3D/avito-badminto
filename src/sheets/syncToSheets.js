@@ -2,7 +2,7 @@ const { createSheetsClient } = require('./sheetsClient');
 
 const SHEET_ID = process.env.GOOGLE_SHEET_ID;
 
-const HEADERS = ['ID', 'Название', 'Цена (₽)', 'Категория', 'Локация', 'Ссылка', 'Первый раз', 'Последний раз'];
+const HEADERS = ['ID', 'Название', 'Цена (₽)', 'Локация', 'Описание', 'Ссылка', 'Категория', 'Первый раз', 'Последний раз'];
 
 function normalizeSheetName(name) {
   return String(name).trim().replace(/[\\/?*[\]:]/g, ' ').replace(/\s+/g, ' ').slice(0, 100) || 'Объявления';
@@ -33,9 +33,10 @@ function formatRow(item) {
     item.id,
     item.title,
     item.price ?? '',
-    item.category,
     item.location ?? '',
+    item.description ?? '',
     item.url,
+    item.category,
     item.first_seen_at,
     item.last_seen_at,
   ];

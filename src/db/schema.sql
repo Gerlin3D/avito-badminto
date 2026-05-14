@@ -5,6 +5,7 @@ create table if not exists items (
   url TEXT NOT NULL,
   location TEXT,
   seller_name TEXT,
+  description TEXT,
   category TEXT,
   query TEXT NOT NULL,
   first_seen_at TEXT NOT NULL,
